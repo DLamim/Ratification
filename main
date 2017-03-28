@@ -1,0 +1,310 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Globalization;
+using System.Runtime.InteropServices;
+using EasyDeviation;
+using System.Data.OleDb;
+using System.IO;
+
+
+
+namespace DeviationCalculator
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+        //Load data to combobox
+        public List<CountryCurrencyPair> GetCountryListData()
+        {
+            return CultureInfo.GetCultures(CultureTypes.SpecificCultures)
+                .Select(c => new RegionInfo(c.LCID)).Distinct()
+                .Select(r => new CountryCurrencyPair()
+                {
+                    Country = r.EnglishName,
+                    Currency = r.CurrencyEnglishName
+                }).ToList();
+        }
+        //Form load
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            //load countries names into combobox
+            //countriesComboBox.DataSource = GetCountryList();  
+            //status strip shows Ready
+            toolStripStatusLabel1.Text = "Ready.";
+        }
+        //Read excel file
+        private void getExcelFile() 
+        {
+            string currency = currencyTextBox.Text;
+
+            OleDbConnection conn = new OleDbConnection();
+            conn.ConnectionString = @"Provider=Microsoft.ACE.OLEDB.12.0; Data Source=D:\Dionisio\Visual Studio\Projects\DeviationCalculator\DeviationCalculator\bin\Release\db.xlsx; Extended properties=""Excel 8.0;HDR=Yes;IMEX=1;ImportMixedTypes=Text;TypeGuessRows=0"""; ;
+
+            OleDbCommand command = new OleDbCommand
+            (
+                "SELECT CODE, CURRENCY, VALUE " + "FROM [PLAN1$] WHERE CURRENCY = '" + currency + "' ", conn
+            );
+
+            DataSet dsCountries = new DataSet();
+            DataTable dtCountries = new DataTable();
+            OleDbDataAdapter adapter = new OleDbDataAdapter(command);
+            adapter.Fill(dsCountries);
+
+            dtCountries = dsCountries.Tables["PLAN1"];
+            dataGridView1.DataSource = dsCountries.Tables[0];
+
+            textBox3.Text = Convert.ToString(dsCountries.Tables[0].Rows[1][3].ToString());
+            //if (dsCountries.Tables[0].Rows[0][3].ToString())
+            //{
+            //    DataRow dr = dsCountries.Tables[0].Rows[0][3];
+            //    textBox3.Text = dr["CODE"].ToString();
+            //}
+  
+        }
+        private double CostCalculation()
+        {
+            resultCostLabel.Text = "";
+            double resultCost = 0;
+
+            bool act = string.IsNullOrWhiteSpace(actCostTxt.Text);
+            bool prev = string.IsNullOrWhiteSpace(preCostTxt.Text);
+
+            if (!act && !prev)
+            {
+                decimal num;
+
+                bool actIsNum = decimal.TryParse(actCostTxt.Text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out num);
+                bool prevIsNum = decimal.TryParse(preCostTxt.Text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out num);
+               
+                if (actIsNum && prevIsNum)              
+                {
+                    double costAct = Convert.ToDouble(actCostTxt.Text);
+                    double costPrev = Convert.ToDouble(preCostTxt.Text);
+
+                    if (costAct != 0 && costPrev != 0)
+                    {
+                        resultCost = Math.Round((Convert.ToDouble(costAct / costPrev) * 100) - 100);
+
+                        if (resultCost > 0)
+                        {
+                            resultCostLabel.Text = "Cost increased " + Convert.ToString(resultCost) + "%";
+                        }
+                        else
+                        {
+                            resultCostLabel.Text = "Cost decreased " + Convert.ToString(Math.Abs(resultCost)) + "%";
+                        }
+                    }
+                }
+            }
+
+            return resultCost;
+        }
+
+        private double ConsumpCalculation()
+        {
+            resultConsLabel.Text = "";
+            double resultConsump = 0;
+           
+            bool act = string.IsNullOrWhiteSpace(actConsTxt.Text);
+            bool prev = string.IsNullOrWhiteSpace(prevConsTxt.Text);
+
+            if (!act && !prev)
+            {
+                decimal num;
+
+                bool actIsNum = decimal.TryParse(actConsTxt.Text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out num);
+                bool prevIsNum = decimal.TryParse(prevConsTxt.Text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out num);
+
+                if (actIsNum && prevIsNum)
+                {
+                    double consAct = Convert.ToDouble(actConsTxt.Text);
+                    double consPrev = Convert.ToDouble(prevConsTxt.Text);
+
+                    if (consAct != 0 && consPrev != 0)
+                    {
+                        resultConsump = Math.Round((Convert.ToDouble(consAct / consPrev) * 100) - 100);
+
+                        if (resultConsump > 0)
+                        {
+                            resultConsLabel.Text = "Consumption increased " + Convert.ToString(resultConsump) + "%";
+                        }
+                        else
+                        {
+                            resultConsLabel.Text = "Consumption decreased " + Convert.ToString(Math.Abs(resultConsump)) + "%";
+                        }
+                    }
+                }
+            }
+
+            return resultConsump;
+
+        }
+
+        private void GenerateTxt()
+        {
+            double costPercent = CostCalculation();
+            double consumpPercent = ConsumpCalculation();
+
+            string seasonal = "although this account has a seasonal consumption trend, ";
+            string consumpInc = "consumption and cost have increased ";
+            string consumpDec = "consumption and cost have decreased ";
+            string compared = "when compared with the same period from previous year. ";
+            string advise = "please advise us if this variation is to be expected and the likely reason e.g. ";
+            string egDec = "1) Vacant Site, 2) Seasonality, 3) Site refit, 4) Floor area reduction or 5) Other reasons. ";
+            string egInc = "1) New equipment, 2) Changed operating hours, 3) Site refit, 4) Floor area expansion or 5) Other reason. ";
+            string majorInc = "There has been a major increase in cost and consumption ";
+            string majorDec = "There has been a major decrease in cost and consumption ";
+            string adviseInc = advise + egInc;
+            string adviseDec = advise + egDec;
+
+            if (shortCheckBox.Checked)
+            {
+                adviseInc = "";
+                adviseDec = "";
+            }
+
+            if (seasonalCheckBox.Checked || majorDevCheckBox.Checked)
+            {
+                if (seasonalCheckBox.Checked && majorDevCheckBox.Checked)
+                {
+                    if (costPercent > 0 || consumpPercent > 0)
+                    {
+                        msgDeviationTxtBox.Text = "Hi, " + seasonal + "we have identified a major increase in cost and consumption " + compared + adviseInc;
+                    }
+                    else
+                    {
+                        msgDeviationTxtBox.Text = "Hi, " + seasonal + "we have identified a major decrease in cost and consumption " + compared + adviseDec;
+                    }                   
+                }
+                else
+                {
+                    if (seasonalCheckBox.Checked && !majorDevCheckBox.Checked)
+                    {
+                        if (costPercent > 0 || consumpPercent > 0)
+                        {
+                            msgDeviationTxtBox.Text = "Hi, " + seasonal + consumpInc + consumpPercent + "% and " + costPercent + "% " + compared + adviseInc;
+                        }
+                        else
+                        {
+                            msgDeviationTxtBox.Text = "Hi, " + seasonal + consumpDec + Math.Abs(consumpPercent) + "% and " + Math.Abs(costPercent) + "% " + compared + adviseDec;
+                        }
+                    }
+                    if (!seasonalCheckBox.Checked && majorDevCheckBox.Checked)
+                    {
+                        if (costPercent > 0 || consumpPercent > 0)
+                        {
+                            msgDeviationTxtBox.Text = "Hi, " + majorInc + compared + adviseInc;
+
+                        }
+                        else
+                        {
+                            msgDeviationTxtBox.Text = "Hi, " + majorDec + compared + adviseDec;
+                        }
+                    }
+                }
+
+            }
+            else
+            {
+                if (costPercent > 0 || consumpPercent > 0)
+                {
+                    msgDeviationTxtBox.Text = "Hi, " + consumpInc + consumpPercent + "% and " + costPercent + "% " + compared + adviseInc;
+
+                }
+                else
+                {
+                    msgDeviationTxtBox.Text = "Hi, " + consumpDec + Math.Abs(consumpPercent) + "% and " + Math.Abs(costPercent) + "% " + compared + adviseDec;
+                }
+            }
+        }
+
+        private void actCostTxt_TextChanged(object sender, EventArgs e)
+        {
+            CostCalculation();
+        }
+
+        private void preCostTxt_TextChanged(object sender, EventArgs e)
+        {
+            CostCalculation();
+        }
+
+        private void actConsTxt_TextChanged(object sender, EventArgs e)
+        {
+            ConsumpCalculation();
+        }
+
+        private void prevConsTxt_TextChanged(object sender, EventArgs e)
+        {
+            ConsumpCalculation();
+        }
+
+        private void genTxtButton_Click(object sender, EventArgs e)
+        {
+            GenerateTxt();
+        }
+
+        private void countriesComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            currencyTextBox.Text = countriesComboBox.SelectedValue.ToString();
+            
+        }
+        //Open About window
+        private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            AboutBox1 about = new AboutBox1();
+            about.ShowDialog();
+        }
+        //Copy text to clipboard
+        private void copyTxtButton_Click(object sender, EventArgs e)
+        {
+            if (msgDeviationTxtBox.Text != "")
+            {
+                Clipboard.SetText(msgDeviationTxtBox.Text);
+                toolStripStatusLabel1.Text = "Text copied.";
+            }           
+        }
+        //Enable currency converter
+        private void currencyConverterToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if(currencyConverterToolStripMenuItem.Checked)
+            {               
+                currencyPanel.Visible = true;
+                List<CountryCurrencyPair> lst = GetCountryListData();
+                this.countriesComboBox.DisplayMember = "Country";
+                this.countriesComboBox.ValueMember = "Currency";
+                this.countriesComboBox.DataSource = lst;
+            }           
+            else
+            {
+                currencyPanel.Visible = false;
+            }
+        }       
+        //Generate and copy text when mouse is above button
+        private void genTxtButton_MouseEnter(object sender, EventArgs e)
+        {
+            if (advancedModToolStripMenuItem.Checked)
+            {
+                //Generate text
+                GenerateTxt();
+                //Copy text
+                Clipboard.SetText(msgDeviationTxtBox.Text);
+                toolStripStatusLabel1.Text = "Text copied.";
+            }
+        }
+
+        private void getCurButton_Click(object sender, EventArgs e)
+        {
+            getExcelFile();
+        }    
+    }
+}
